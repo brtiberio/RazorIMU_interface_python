@@ -35,8 +35,7 @@
 This module contains a few functions to interact with Sparkfun Razor 9DOF IMU.
 
 """
-
-import Queue
+import sys
 from datetime import datetime
 import logging
 import os
@@ -45,6 +44,11 @@ import struct
 import threading
 from time import sleep
 import crcmod.predefined
+
+if sys.version_info.major == (3):
+    import queue
+else:
+    import Queue
 
 
 class RazorIMU(object):
@@ -65,7 +69,10 @@ class RazorIMU(object):
         self.logFile = ""
         self.dataQueue = None
         self.exitFlag = threading.Event()
-        self.orders = Queue.Queue()
+        if sys.version_info.major == (3):
+            self.orders = queue.Queue()
+        else:
+            self.orders = Queue.Queue()
 
     def crc8Value(self, i):
         crc8_maxim = crcmod.predefined.mkPredefinedCrcFun('crc-8-maxim')
@@ -118,7 +125,7 @@ class RazorIMU(object):
             return False
         else:
             # port exists, open it
-            self.myPort = serial.Serial(comPort, baudrate=baudRate)
+            self.myPort = serial.Serial(comPort, baudrate=baudRate, exclusive=True)
             if not self.myPort.is_open:
                 self.log.warning("Error opening port: {0}".format(comPort))
                 self.isOpen = False
@@ -160,23 +167,23 @@ class RazorIMU(object):
                     dataFrame[0] = syncAA
                     dataFrame[1] = syncBB
                     # get ID Index Acc Gyro Mag CRC8
-                    dataFrame[2] = struct.unpack('<B', serialBuffer[0])
+                    dataFrame[2] = struct.unpack_from('<B', serialBuffer, 0)
                     # to remove tuples
                     dataFrame[2] = dataFrame[2][0]
                     # get acc floats
                     dataFrame[3] = [0, 0, 0]
-                    dataFrame[3][0:] = struct.unpack('<fff', serialBuffer[1:13])
+                    dataFrame[3][0:] = struct.unpack_from('<fff', serialBuffer, 1)
                     # get gyro floats
                     dataFrame[4] = [0, 0, 0]
-                    dataFrame[4][0:] = struct.unpack('<fff', serialBuffer[13:25])
+                    dataFrame[4][0:] = struct.unpack_from('<fff', serialBuffer, 13)
                     # get mag floats
                     dataFrame[5] = [0, 0, 0]
-                    dataFrame[5][0:] = struct.unpack('<fff', serialBuffer[25:37])
+                    dataFrame[5][0:] = struct.unpack_from('<fff', serialBuffer, 25)
                     # get euler floats
                     dataFrame[6] = [0, 0, 0]
-                    dataFrame[6][0:] = struct.unpack('<fff', serialBuffer[37:49])
+                    dataFrame[6][0:] = struct.unpack_from('<fff', serialBuffer, 37)
                     # get crc8 maxim
-                    dataFrame[7] = struct.unpack('<B', serialBuffer[49])
+                    dataFrame[7] = struct.unpack_from('<B', serialBuffer, 49)
                     dataFrame[7] = dataFrame[7][0]
                     dataFrame = dict(zip(self.keys, dataFrame))
                     # add timestamp
@@ -235,7 +242,7 @@ def main():
             exitFlag: a flag to control the exit of program gracefully
 
         '''
-        print("Index,Time,ID,accx,accy,accz,gyrox,gyroy,gyroz,magx,magy,magz,yaw,pitch,roll,crc8maxim\n")
+        print("Index,Time,ID,accx,accy,accz,gyrox,gyroy,gyroz,magx,magy,magz,psi,theta,phi,crc8maxim\n")
         while(exitFlag.isSet() == False):
             if(dataQueue.empty() == False):
                 newData = dataQueue.get()
@@ -288,7 +295,12 @@ def main():
     # event flag to exit
     exitFlag = threading.Event()
     # create a queue to receive comands
-    dataFIFO = Queue.Queue()
+    # create a queue to receive comands
+    if sys.version_info.major == (3):
+        dataFIFO = queue.Queue()
+    else:
+        dataFIFO = Queue.Queue()
+
     # create a thread to parse responses
     thread1 = threading.Thread(name="printData", target=printData,
                                args=(dataFIFO, exitFlag))
@@ -310,6 +322,7 @@ def main():
     # exit
     print('Exiting now')
     return
+
 
 if __name__ == '__main__':
     main()
