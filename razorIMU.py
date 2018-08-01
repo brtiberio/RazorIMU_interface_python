@@ -25,7 +25,7 @@
 
 :Date: 22 Dez 2016
 
-:Version: 0.1
+:Version: 0.2
 
 :Author: Bruno Tibério
 
@@ -35,7 +35,6 @@
 This module contains a few functions to interact with Sparkfun Razor 9DOF IMU.
 
 """
-import sys
 from datetime import datetime
 import logging
 import os
@@ -45,22 +44,22 @@ import threading
 from time import sleep
 import crcmod.predefined
 
-if sys.version_info.major == (3):
+try:
     import queue
-else:
-    import Queue
+except ImportError:
+    import Queue as queue
 
 
 class RazorIMU(object):
-    '''
+    """
     classdocs
-    '''
+    """
     keys = ('syncAA', 'syncBB', 'ID', 'Acc', 'Gyro', 'Mag', 'euler', 'crc8maxim')
 
     def __init__(self, sensorName="RazorIMU 1"):
-        '''
+        """
         Constructor
-        '''
+        """
         self.name = sensorName
         self.myPort = ""
         self.isOpen = 0  # is port open?*/
@@ -69,10 +68,7 @@ class RazorIMU(object):
         self.logFile = ""
         self.dataQueue = None
         self.exitFlag = threading.Event()
-        if sys.version_info.major == (3):
-            self.orders = queue.Queue()
-        else:
-            self.orders = Queue.Queue()
+        self.orders = queue.Queue()
 
     def crc8Value(self, i):
         crc8_maxim = crcmod.predefined.mkPredefinedCrcFun('crc-8-maxim')
@@ -81,7 +77,7 @@ class RazorIMU(object):
     def begin(self, dataQueue,
               comPort="/dev/ttyUSB0",
               baudRate=500000):
-        ''' Initializes the Sparkfun razor IMU.
+        """ Initializes the Sparkfun razor IMU.
 
         This function resets the current port to factory default and setup the
         gps receiver to be able to acept new commands. Also creates the
@@ -115,7 +111,7 @@ class RazorIMU(object):
 
         .. _module logging: https://docs.python.org/2/library/logging.html
 
-        '''
+        """
 
         self.log = logging.getLogger(self.name)
 
@@ -142,9 +138,9 @@ class RazorIMU(object):
             return True
 
     def parseResponces(self):
-        '''
+        """
         A thread  to parse responses from device
-        '''
+        """
         self.log.info("Entering Thread logger")
         if(not self.isOpen):
             self.log.warning('Port is not open: {0}'.format(self.myPort))
@@ -202,7 +198,7 @@ class RazorIMU(object):
         return
 
     def shutdown(self):
-        '''Prepare for exiting program
+        """Prepare for exiting program
 
         Returns:
             always returns true after all tasks are done.
@@ -210,17 +206,17 @@ class RazorIMU(object):
         * exit logger thread
         * close port
 
-        '''
+        """
         self.exitFlag.set()
         self.threadID.join()
         self.myPort.close()
         self.isOpen = False
-        self.log.info("Shuting down")
+        self.log.info("Shutting down")
         return True
 
 
 def main():
-    '''Set of test to run to see if class behaves as expected.
+    """Set of test to run to see if class behaves as expected.
 
     Creates a razor class object and execute the following commands:
 
@@ -229,11 +225,11 @@ def main():
     - wait for 10 seconds
     - shutdown: safely disconnects.
 
-    '''
-    import optparse
+    """
+    import argparse
 
     def printData(dataQueue, exitFlag):
-        ''' prints data to console
+        """ prints data to console
 
         Thread used to print data from razor to the console.
 
@@ -241,7 +237,7 @@ def main():
             dataQueue: queue class object where data is stored
             exitFlag: a flag to control the exit of program gracefully
 
-        '''
+        """
         print("Index,Time,ID,accx,accy,accz,gyrox,gyroy,gyroz,magx,magy,magz,psi,theta,phi,crc8maxim\n")
         while(exitFlag.isSet() == False):
             if(dataQueue.empty() == False):
@@ -274,41 +270,57 @@ def main():
     # Start of main part
     #
     ############################################################################
-    parser = optparse.OptionParser(usage="usage: %prog [options] args")
-    parser.add_option("-p", "--port", action="store", type="string",
-                      dest="port", default="/dev/ttyUSB0")
-    parser.add_option("-n", "--name", action="store", type="string",
-                      dest="name", default="RAZOR1")
-    parser.add_option("--log", action="store", type="string",
-                      dest="log", default="output.log")
-    parser.add_option("--log-level", action="store", type="int",
-                      dest="logLevel", default=20)
-    (opts, args) = parser.parse_args()
-    if len(args) > 4:
-        parser.error("incorrect number of arguments")
-        return
+    parser = argparse.ArgumentParser(add_help=True, description="interface for razor sensors")
+    parser.add_argument("-p", "--port", action="store", type=str,
+                        dest="port", default="/dev/ttyUSB0", help='serial port used')
+    parser.add_argument("-n", "--name", action="store", type=str,
+                        dest="name", default="RAZOR", help='ID of sensor, in case of multiple units')
+    parser.add_argument('--log', action='store', type=str, dest='log', default='razor.log',
+                        help='log file to be used')
+    parser.add_argument("--log-level", action="store", type=str,
+                        dest="logLevel", default='info',
+                        help='Log level to be used. See logging module for more info',
+                        choices=['critical', 'error', 'warning', 'info', 'debug'])
 
-    logging.basicConfig(filename=opts.log,
-                        level=opts.logLevel,
-                        format='[%(asctime)s] [%(threadName)-10s] %(levelname)-8s %(message)s',
+    args = parser.parse_args()
+
+    log_Level = {'error': logging.ERROR,
+                 'debug': logging.DEBUG,
+                 'info': logging.INFO,
+                 'warning': logging.WARNING,
+                 'critical': logging.CRITICAL
+                 }
+
+    logging.basicConfig(filename=args.log,
+                        level=log_Level[args.logLevel],
+                        format='[%(asctime)s] [%(name)-20s] [%(threadName)-10s] %(levelname)-8s %(message)s',
                         filemode="w")
+
+    # ---------------------------------------------------------------------------
+    # define a Handler which writes INFO messages or higher in console
+    # ---------------------------------------------------------------------------
+    console = logging.StreamHandler()
+    console.setLevel(log_Level[args.logLevel])
+    # set a format which is simpler for console use
+    formatter = logging.Formatter('%(name)-20s: %(levelname)-8s %(message)s')
+    # tell the handler to use this format
+    console.setFormatter(formatter)
+    # add the handler to the root logger
+    logging.getLogger('').addHandler(console)
+    # ---------------------------------------------------------------------------
     # event flag to exit
     exitFlag = threading.Event()
     # create a queue to receive comands
-    # create a queue to receive comands
-    if sys.version_info.major == (3):
-        dataFIFO = queue.Queue()
-    else:
-        dataFIFO = Queue.Queue()
+    dataFIFO = queue.Queue()
 
     # create a thread to parse responses
     thread1 = threading.Thread(name="printData", target=printData,
                                args=(dataFIFO, exitFlag))
 
     # instanciate a class object
-    razor = RazorIMU(opts.name)
+    razor = RazorIMU(args.name)
     # begin
-    if(razor.begin(dataFIFO, comPort=opts.port) != 1):
+    if razor.begin(dataFIFO, comPort=args.port) != 1:
         print("Not able to begin device properly... check logfile")
         return
     thread1.start()

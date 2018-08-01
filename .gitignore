@@ -15,7 +15,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-#lib/
+lib/
 lib64/
 parts/
 sdist/
@@ -62,3 +62,12 @@ target/
 
 #csv files
 *.csv
+
+\.idea/
+
+bin/
+
+pip-selfcheck\.json
+
+pyvenv\.cfg
+share/
