@@ -56,12 +56,12 @@ class RazorIMU(object):
     """
     keys = ('syncAA', 'syncBB', 'ID', 'Acc', 'Gyro', 'Mag', 'euler', 'crc8maxim')
 
-    def __init__(self, sensorName="RazorIMU 1"):
+    def __init__(self, sensor_name="RazorIMU 1"):
         """
         Constructor
         """
-        self.name = sensorName
-        self.myPort = ""
+        self.name = sensor_name
+        self.device = ""
         self.isOpen = 0  # is port open?*/
         self.baudRate = 500000  # current communication baudRate*/
         self.openError = 0  # if any error during any process occurs this will be set */
@@ -69,14 +69,17 @@ class RazorIMU(object):
         self.dataQueue = None
         self.exitFlag = threading.Event()
         self.orders = queue.Queue()
+        self.log = None
+        self.threadID = None
 
-    def crc8Value(self, i):
+    @staticmethod
+    def crc8_value(i):
         crc8_maxim = crcmod.predefined.mkPredefinedCrcFun('crc-8-maxim')
         return crc8_maxim(i)
 
-    def begin(self, dataQueue,
-              comPort="/dev/ttyUSB0",
-              baudRate=500000):
+    def begin(self, data_queue,
+              com_port="/dev/ttyUSB0",
+              baud_rate=500000):
         """ Initializes the Sparkfun razor IMU.
 
         This function resets the current port to factory default and setup the
@@ -85,9 +88,9 @@ class RazorIMU(object):
         is made, it launchs a thread used to parse messages comming from razor.
 
         Args:
-            comPort: system port where receiver is connected.
-            dataQueue: a Queue object to store incoming razor messages.
-            baudRate: baudrate to configure port.
+            com_port: system port where receiver is connected.
+            data_queue: a Queue object to store incoming razor messages.
+            baud_rate: baud rate to configure port.
 
         Returns:
             True or False if the setup has gone as expected or not.
@@ -95,100 +98,100 @@ class RazorIMU(object):
         :Example:
           .. code-block:: python
 
-              razor.begin(comPort="<port>",
-                  dataQueue=<your Queue obj>,
-                  baudRate=50000)
+              razor.begin(com_port="<port>",
+                  data_queue=<your Queue obj>,
+                  baud_rate=50000)
 
         **Default values**
 
-        :comPort:  "/dev/ttyUSB0"
-        :baudRate:  500000
+        :com_port:  "/dev/ttyUSB0"
+        :baud_rate:  500000
 
         .. warning::
-            This class uses module ``logging`` wich must be configured in your
+            This class uses module ``logging`` which must be configured in your
             main program using the ``basicConfig`` method. Check documentation
             of `module logging`_ for more info.
 
-        .. _module logging: https://docs.python.org/2/library/logging.html
+        .. _module logging: https://docs.python.org/3/library/logging.html
 
         """
 
         self.log = logging.getLogger(self.name)
 
         # checking if port exists on system
-        if not os.path.exists(comPort):
-            self.log.warning('Port is not available: {0}'.format(comPort))
+        if not os.path.exists(com_port):
+            self.log.warning('Port is not available: {0}'.format(com_port))
             return False
         else:
             # port exists, open it
-            self.myPort = serial.Serial(comPort, baudrate=baudRate, exclusive=True)
-            if not self.myPort.is_open:
-                self.log.warning("Error opening port: {0}".format(comPort))
+            self.device = serial.Serial(com_port, baudrate=baud_rate, exclusive=True)
+            if not self.device.is_open:
+                self.log.warning("Error opening port: {0}".format(com_port))
                 self.isOpen = False
                 return False
-            self.baudRate = baudRate
+            self.baudRate = baud_rate
             self.isOpen = True
             # open dataFile to save GPS data
-            self.dataQueue = dataQueue
+            self.dataQueue = data_queue
             # start thread to handle GPS responces
-            self.threadID = threading.Thread(name="Logger", target=self.parseResponces)
+            self.threadID = threading.Thread(name="Logger", target=self.parseResponses)
             self.threadID.start()
             self.log.info("Started Logger Thread")
             sleep(0.1)
             return True
 
-    def parseResponces(self):
+    def parseResponses(self):
         """
         A thread  to parse responses from device
         """
         self.log.info("Entering Thread logger")
-        if(not self.isOpen):
-            self.log.warning('Port is not open: {0}'.format(self.myPort))
+        if not self.isOpen:
+            self.log.warning('Port is not open: {0}'.format(self.device))
             self.log.info("Exiting Thread logger")
             return
-        MYPORT = self.myPort
+        device = self.device
         # dataFile = self.dataFile
-        indice = 0
-        while(self.exitFlag.isSet() == False):
+        index = 0
+        while not self.exitFlag.isSet():
             syncAA = 0
             syncBB = 0
-            dataFrame = [0] * 8
-            syncAA = ord(MYPORT.read(1))
-            if(syncAA == 0xAA):
-                syncBB = ord(MYPORT.read(1))
-                if(syncBB == 0xBB):
+            data_frame = [0] * 8
+            syncAA = ord(device.read(1))
+            if syncAA == 0xAA:
+                syncBB = ord(device.read(1))
+                if syncBB == 0xBB:
                     # correct sync bytes received
                     # read rest of the packet 52bytes - 2 sync bytes
-                    serialBuffer = MYPORT.read(50)
-                    dataFrame[0] = syncAA
-                    dataFrame[1] = syncBB
+                    buffer = device.read(50)
+                    data_frame[0] = syncAA
+                    data_frame[1] = syncBB
                     # get ID Index Acc Gyro Mag CRC8
-                    dataFrame[2] = struct.unpack_from('<B', serialBuffer, 0)
+                    data_frame[2] = struct.unpack_from('<B', buffer, 0)
                     # to remove tuples
-                    dataFrame[2] = dataFrame[2][0]
+                    data_frame[2] = data_frame[2][0]
                     # get acc floats
-                    dataFrame[3] = [0, 0, 0]
-                    dataFrame[3][0:] = struct.unpack_from('<fff', serialBuffer, 1)
+                    data_frame[3] = [0, 0, 0]
+                    data_frame[3][0:] = struct.unpack_from('<fff', buffer, 1)
                     # get gyro floats
-                    dataFrame[4] = [0, 0, 0]
-                    dataFrame[4][0:] = struct.unpack_from('<fff', serialBuffer, 13)
+                    data_frame[4] = [0, 0, 0]
+                    data_frame[4][0:] = struct.unpack_from('<fff', buffer, 13)
                     # get mag floats
-                    dataFrame[5] = [0, 0, 0]
-                    dataFrame[5][0:] = struct.unpack_from('<fff', serialBuffer, 25)
+                    data_frame[5] = [0, 0, 0]
+                    data_frame[5][0:] = struct.unpack_from('<fff', buffer, 25)
                     # get euler floats
-                    dataFrame[6] = [0, 0, 0]
-                    dataFrame[6][0:] = struct.unpack_from('<fff', serialBuffer, 37)
+                    data_frame[6] = [0, 0, 0]
+                    data_frame[6][0:] = struct.unpack_from('<fff', buffer, 37)
                     # get crc8 maxim
-                    dataFrame[7] = struct.unpack_from('<B', serialBuffer, 49)
-                    dataFrame[7] = dataFrame[7][0]
-                    dataFrame = dict(zip(self.keys, dataFrame))
+                    data_frame[7] = struct.unpack_from('<B', buffer, 49)
+                    data_frame[7] = data_frame[7][0]
+                    data_frame = dict(zip(self.keys, data_frame))
                     # add timestamp
-                    currentTime = datetime.now()
-                    myTime = '{0:%Y-%m-%d %H:%M:%S}'.format(currentTime) + '.{0:03.0f}'.format(round(currentTime.microsecond / 1000.0))
-                    outMessage = dict(Time=myTime, Indice=indice)
-                    outMessage.update(dataFrame)
+                    current_time = datetime.now()
+                    my_time = '{0:%Y-%m-%d %H:%M:%S}'.format(current_time) + '.{0:03.0f}'.format(round(current_time.microsecond / 1000.0))
+                    outMessage = dict(Time=my_time, Index=index)
+                    outMessage.update(data_frame)
                     self.dataQueue.put_nowait(outMessage)
-                    indice = indice + 1
+                    index = index+ 1
                 else:
                     pass
             else:
@@ -209,7 +212,7 @@ class RazorIMU(object):
         """
         self.exitFlag.set()
         self.threadID.join()
-        self.myPort.close()
+        self.device.close()
         self.isOpen = False
         self.log.info("Shutting down")
         return True
@@ -245,7 +248,7 @@ def main():
                 print('{0:5d},{1},{2},{3:.2f},{4:.2f},{5:.2f},{6:.2f},'
                       '{7:.2f},{8:.2f},{9:.2f},{10:.2f},{11:.2f},'
                       '{12:.2f},{13:.2f},{14:.2f},{15}'
-                      '\n'.format(newData['Indice'],
+                      '\n'.format(newData['Index'],
                                   newData['Time'],
                                   newData['ID'],
                                   newData['Acc'][0],
@@ -281,10 +284,12 @@ def main():
                         dest="logLevel", default='info',
                         help='Log level to be used. See logging module for more info',
                         choices=['critical', 'error', 'warning', 'info', 'debug'])
+    parser.add_argument("-b", "--baud", action="store", type=str, dest="baud", default=500000,
+                        help="device baud rate")
 
     args = parser.parse_args()
 
-    log_Level = {'error': logging.ERROR,
+    log_level = {'error': logging.ERROR,
                  'debug': logging.DEBUG,
                  'info': logging.INFO,
                  'warning': logging.WARNING,
@@ -292,7 +297,7 @@ def main():
                  }
 
     logging.basicConfig(filename=args.log,
-                        level=log_Level[args.logLevel],
+                        level=log_level[args.logLevel],
                         format='[%(asctime)s] [%(name)-20s] [%(threadName)-10s] %(levelname)-8s %(message)s',
                         filemode="w")
 
@@ -300,7 +305,7 @@ def main():
     # define a Handler which writes INFO messages or higher in console
     # ---------------------------------------------------------------------------
     console = logging.StreamHandler()
-    console.setLevel(log_Level[args.logLevel])
+    console.setLevel(log_level[args.logLevel])
     # set a format which is simpler for console use
     formatter = logging.Formatter('%(name)-20s: %(levelname)-8s %(message)s')
     # tell the handler to use this format
@@ -310,17 +315,17 @@ def main():
     # ---------------------------------------------------------------------------
     # event flag to exit
     exitFlag = threading.Event()
-    # create a queue to receive comands
+    # create a queue to receive commands
     dataFIFO = queue.Queue()
 
     # create a thread to parse responses
     thread1 = threading.Thread(name="printData", target=printData,
                                args=(dataFIFO, exitFlag))
 
-    # instanciate a class object
+    # instantiate a class object
     razor = RazorIMU(args.name)
     # begin
-    if razor.begin(dataFIFO, comPort=args.port) != 1:
+    if razor.begin(dataFIFO, com_port=args.port, baud_rate=args.baud) != 1:
         print("Not able to begin device properly... check logfile")
         return
     thread1.start()
